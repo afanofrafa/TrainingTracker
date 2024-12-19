@@ -1,0 +1,50 @@
+User
+{
+  "usId": 8,
+  "usName": "string",
+  "usEmail": "string",
+  "usLogin": "string",
+  "usStartWeight": 0,
+  "usHeight": 0,
+  "usAge": 0,
+  "usPassword": "11",
+  "usCurrWeight": 0,
+  "usStartDate": "2024-11-01"
+}
+Workout
+{
+  "wUserId": 1,
+  "wId": 1,
+  "wStartTime": "00:00:00.0",
+  "wEndTime": "00:00:00.0",
+  "wDate": "2024-01-01",
+  "wTotalDuration": "00:00:00.0",
+  "wSequenceNumber": 0
+}
+WorkoutExercise
+{
+  "weWorkoutId": 1,
+  "weWexerciseId": 0,
+  "weId": 1,
+  "weRestTimeAfterExercise": "00:00:00.0",
+  "weSequenceNumber": 0
+}
+Set
+{
+  "sId": 2,
+  "sSequenceNumber": 0,
+  "sEffort": 0,
+  "sRestTimeAfterSet":"00:00:00.0",
+  "sComments": "string",
+  "sRepsDone": 0,
+  "sWexerciseId": 0,
+  "sWeId": 1
+}
+Equipment
+{
+  "eqSetId": 1,
+  "eqId": 2,
+  "eqName": "string",
+  "eqDescription": "string",
+  "eqWeight": 0
+}
