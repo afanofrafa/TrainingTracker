@@ -6,19 +6,36 @@ namespace TrainingTracker.Services
     public interface IStatisticsService
     {
         Task<UsersWeekStatisticsTotal> GetAggregatedStatisticsAsync(int exerciseId);
+        Task DeleteAllUsersWeekStatisticsAsync();
+        Task<List<UsersWeekStatisticsTotal>> GetAllUsersWeekStatisticsAsync();
     }
 
     public class StatisticsService : IStatisticsService
     {
         private readonly MydbContext _context;
-
+        private int uwsId = 1;
         public StatisticsService()
         {
             _context = new MydbContext();
         }
+        // Удаление всех записей UsersWeekStatisticsTotal
+        public async Task DeleteAllUsersWeekStatisticsAsync()
+        {
+            var allRecords = await _context.UsersWeekStatisticsTotals.ToListAsync();
+            _context.UsersWeekStatisticsTotals.RemoveRange(allRecords);
+            await _context.SaveChangesAsync();
+        }
 
+        // Получение всех записей UsersWeekStatisticsTotal
+        public async Task<List<UsersWeekStatisticsTotal>> GetAllUsersWeekStatisticsAsync()
+        {
+            return await _context.UsersWeekStatisticsTotals.ToListAsync();
+        }
         public async Task<UsersWeekStatisticsTotal> GetAggregatedStatisticsAsync(int exerciseId)
         {
+            bool exerciseExists = await _context.Exercises.AnyAsync(e => e.EId == exerciseId);
+            if (!exerciseExists)
+                return null;
             // Получаем текущую дату
             DateTime currentDate = DateTime.UtcNow;
 
@@ -28,25 +45,28 @@ namespace TrainingTracker.Services
             // Преобразуем в DateOnly для дальнейшего использования в поле UwsWeekStart
             DateOnly currentDateOnly = DateOnly.FromDateTime(currentDate);
             DateOnly weekAgoDateOnly = DateOnly.FromDateTime(weekAgo);
+            // Удаляем старые записи, если они существуют
+            var existingRecords = await _context.UsersWeekStatisticsTotals
+                .Where(uws => uws.UwsWeekStart == weekAgoDateOnly && uws.UwsExerciseId == exerciseId)
+                .ToListAsync();
 
-            // Основной запрос для выборки статистики по упражнению за последнюю неделю
-            var result = await (from we in _context.WorkoutExercises
-                                join w in _context.Workouts on we.WeWorkoutId equals w.WId
-                                join s in _context.Sets on we.WeId equals s.SWeId
-                                join eq in _context.Equipment on s.SId equals eq.EqSetId
-                                where we.WeWexerciseId == exerciseId
-                                && w.WDate >= weekAgoDateOnly && w.WDate <= currentDateOnly
-                                select new
-                                {
-                                    workout = w,
-                                    workoutExercise = we,
-                                    set = s,
-                                    equipment = eq
-                                }).ToListAsync();
-
-            if (!result.Any())
-                return null;
-
+            if (existingRecords.Any())
+            {
+                var recordWithMinId = existingRecords.OrderBy(record => record.UwsId).FirstOrDefault();
+                if (recordWithMinId != null) {
+                    uwsId = recordWithMinId.UwsId;
+                    if (uwsId < 1)
+                        uwsId = 1;
+                }
+                _context.UsersWeekStatisticsTotals.RemoveRange(existingRecords);
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                var maxId = await _context.UsersWeekStatisticsTotals.MaxAsync(record => (int?)record.UwsId) ?? 0;
+                uwsId = maxId + 1;
+            }
+            // Инициализация агрегированных данных
             long totalWexerciseNum = 0;
             long totalSetsNum = 0;
             long totalEffort = 0;
@@ -56,50 +76,59 @@ namespace TrainingTracker.Services
             double totalWeightLifted = 0;
             HashSet<long> uniqueUserIds = new HashSet<long>();
 
-            foreach (var item in result)
+            // Работа с WorkoutExercises
+            var workoutExercises = await _context.WorkoutExercises
+                .Where(we => we.WeWexerciseId == exerciseId)
+                .ToListAsync();
+
+            if (workoutExercises.Any())
             {
-                var workout = item.workout;
-                var workoutExercise = item.workoutExercise;
-                var set = item.set;
-                var equipment = item.equipment;
+                totalWexerciseNum = workoutExercises.Count;
 
-                // Считаем количество уникальных WorkoutExercise
-                if (workoutExercise != null)
-                {
-                    totalWexerciseNum += 1;
-                }
+                // Суммируем время отдыха после упражнений
+                totalRestTimeAfterExercSec = workoutExercises.Sum(we => we.WeRestTimeAfterExercise?.Second ?? 0);
+            }
+            
+            // Работа с Workouts
+            var workoutIds = workoutExercises.Select(we => we.WeWorkoutId).Distinct();
+            var workouts = await _context.Workouts
+                .Where(w => workoutIds.Contains(w.WId) && w.WDate >= weekAgoDateOnly && w.WDate <= currentDateOnly)
+                .ToListAsync();
 
-                // Суммируем количество Set
-                if (set != null)
-                {
-                    totalSetsNum += 1;
-                    totalEffort += set.SEffort ?? 0;
-                    totalRepsNum += set.SRepsDone ?? 0;
-                    totalRestTimeBtwSetsSec += (set.SRestTimeAfterSet?.Second ?? 0);
-                }
+            if (workouts.Any())
+            {
+                // Уникальные пользователи
+                uniqueUserIds.UnionWith(workouts.Select(w => w.WUserId));
+            }
 
-                // Суммируем время отдыха после упражнения
-                if (workoutExercise != null)
-                {
-                    totalRestTimeAfterExercSec += (workoutExercise.WeRestTimeAfterExercise?.Second ?? 0);
-                }
+            // Работа с Sets
+            var workoutExerciseIds = workoutExercises.Select(we => we.WeId).Distinct();
+            var sets = await _context.Sets
+                .Where(s => workoutExerciseIds.Contains(s.SWeId))
+                .ToListAsync();
 
-                // Суммируем веса из Equipment
-                if (equipment != null)
-                {
-                    totalWeightLifted += equipment.EqWeight ?? 0;
-                }
+            if (sets.Any())
+            {
+                totalSetsNum = sets.Count;
+                totalEffort = sets.Sum(s => s.SEffort ?? 0);
+                totalRepsNum = sets.Sum(s => s.SRepsDone ?? 0);
+                totalRestTimeBtwSetsSec = sets.Sum(s => s.SRestTimeAfterSet?.Second ?? 0);
+            }
 
-                // Добавляем уникальные ID пользователей
-                if (workout != null)
-                {
-                    uniqueUserIds.Add(workout.WUserId);
-                }
+            // Работа с Equipment
+            var setIds = sets.Select(s => s.SId).Distinct();
+            var equipment = await _context.Equipment
+                .Where(eq => setIds.Contains(eq.EqSetId))
+                .ToListAsync();
+
+            if (equipment.Any())
+            {
+                totalWeightLifted = equipment.Sum(eq => eq.EqWeight ?? 0);
             }
 
             // Получаем количество уникальных пользователей
             int uniqueUsersCount = uniqueUserIds.Count;
-
+            // Формирование результата
             var aggregatedStatistics = new UsersWeekStatisticsTotal
             {
                 UwsExerciseId = exerciseId,
@@ -111,9 +140,11 @@ namespace TrainingTracker.Services
                 UwsRestTimeBtwSetsSec = totalRestTimeBtwSetsSec,
                 UwsRestTimeAfterExercSec = totalRestTimeAfterExercSec,
                 UwsWeightLifted = totalWeightLifted,
-                UwsWeekStart = weekAgoDateOnly
+                UwsWeekStart = weekAgoDateOnly,
+                UwsId = uwsId
             };
-
+            await _context.UsersWeekStatisticsTotals.AddAsync(aggregatedStatistics);
+            await _context.SaveChangesAsync();
             return aggregatedStatistics;
         }
     }

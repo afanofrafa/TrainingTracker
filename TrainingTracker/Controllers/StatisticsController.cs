@@ -26,6 +26,35 @@ namespace TrainingTracker.Controllers
 
             return Ok(statistics);
         }
+        // Метод для удаления всех записей UsersWeekStatisticsTotal
+        [HttpDelete("DeleteAllUsersWeekStatistics")]
+        public async Task<IActionResult> DeleteAllUsersWeekStatistics()
+        {
+            try
+            {
+                await _statisticsService.DeleteAllUsersWeekStatisticsAsync();
+                return Ok(new { message = "All UsersWeekStatisticsTotal records deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"An error occurred while deleting records: {ex.Message}" });
+            }
+        }
+
+        // Метод для получения всех записей UsersWeekStatisticsTotal
+        [HttpGet("GetAllUsersWeekStatistics")]
+        public async Task<IActionResult> GetAllUsersWeekStatistics()
+        {
+            try
+            {
+                var statistics = await _statisticsService.GetAllUsersWeekStatisticsAsync();
+                return Ok(statistics);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"An error occurred while fetching records: {ex.Message}" });
+            }
+        }
     }
 
 }

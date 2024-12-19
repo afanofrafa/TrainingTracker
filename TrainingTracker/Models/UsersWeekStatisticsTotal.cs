@@ -28,5 +28,5 @@ public partial class UsersWeekStatisticsTotal
 
     public double? UwsWeightLifted { get; set; }
     [JsonIgnore]
-    public virtual Exercise UwsExercise { get; set; } = null!;
+    public virtual Exercise? UwsExercise { get; set; } = null!;
 }
